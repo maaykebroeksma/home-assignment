@@ -1,0 +1,182 @@
+# home-assignment
+R code home assignment
+
+data_ZK_3 = read.csv("https://raw.githubusercontent.com/kekecsz/PSYP13_Data_analysis_class/master/home_sample_3.csv")
+View(data_ZK_3)
+
+# 1. convert data frame from wide to long
+# 2. model of fixed effects (age, sex, weight, STAI, pain_cat, mindfulness, serum, time, random intercept ID)
+# 3. model w/ same fixed effects AND random slope over time
+# 4. plot pain ratings (y) over time (x) w/ regression line, for fixed, random intercept and random slope
+# 5. compare model 2 and 3 using cAIC
+# 6. use the best model for a 4th model incl time (+I(time^2)) and plot regression line
+
+library(psych) # for describe
+library(car) # for residualPlots, vif, pairs.panels, ncvTest
+library(ggplot2) # for ggplot
+library(cAIC4) # for cAIC
+library(r2glmm) # for r2beta
+library(influence.ME) # for influence
+library(lattice) # for qqmath
+library(reshape2) # for melt function
+library(lme4) # for lmer
+library(lmerTest) # to get singificance test in lmer
+library(QuantPsyc)
+library(lsr)
+
+# asign ID as a factor
+data_ZK_3$ID = factor(data_ZK_3$ID)
+# varriables
+names(data_ZK_3)
+# designate which are the repeated varibales
+repeated_variables = c("pain1",	"pain2", "pain3",	"pain4")
+# histograms
+hist(data_ZK_3$pain1)
+hist(data_ZK_3$pain2)
+hist(data_ZK_3$pain3)
+hist(data_ZK_3$pain4)
+# correlation of repeated variables
+cor(data_ZK_3[,repeated_variables])
+
+describe(data_ZK_3)
+
+# 1. convert data frame from wide to long
+
+# id.vars should be all non-repeated variables
+data_ZK_long = melt(data_ZK_3, measure.vars=repeated_variables, variable.name = "time", 
+                    value.name = "pain_rating")
+# order data frame by participant ID(not necessary, just makes the dataframe look more intuitive)
+data_ZK_long = data_ZK_long[order(data_ZK_long[,"ID"]),]
+# change the time variable to a numerical vector
+data_ZK_long$time = as.numeric(data_ZK_long$time)
+# lets look at how the data looks like in long format
+View(data_ZK_long)
+
+# 2. model of fixed effects (age, sex, weight, STAI, pain_cat, mindfulness, serum, time, 
+# random intercept ID)
+model_int <- lmer(formula = pain_rating ~ age + sex + STAI_trait + pain_cat + weight + 
+mindfulness + cortisol_serum + time + (1|ID), data = data_ZK_long)
+
+# 3. model w/ same fixed effects AND random slope over time
+model_slope <- lmer(formula = pain_rating ~ age + sex + STAI_trait + pain_cat + weight + 
+mindfulness + cortisol_serum + time + (time|ID), data = data_ZK_long)
+
+summary(model_int)
+summary(model_slope)
+
+###########################################################################################3
+
+### model comparison to see whether to use random slope or random intercept models
+## plot the regression line (prediction)
+# save the predictions of both models to variables
+data_ZK_long$pred_int = predict(model_int)
+data_ZK_long$pred_slope = predict(model_slope)
+# random intercept model
+windows()
+ggplot(data_ZK_long, aes(y = pain_rating, x = time, group = ID))+
+  geom_point(size = 3)+
+  geom_line(color='red', aes(y=pred_int, x=time))+
+  facet_wrap( ~ ID, ncol = 5)
+# random slope and intercept model
+windows()
+ggplot(data_ZK_long, aes(y = pain_rating, x = time, group = ID))+
+  geom_point(size = 3)+
+  geom_line(color='red', aes(y=pred_slope, x=time))+
+  facet_wrap( ~ ID, ncol = 5)
+
+# compare models with cAIC
+cAIC(model_int)$caic
+cAIC(model_slope)$caic
+# model_slope is better
+
+# compare models with anova
+anova(model_int, model_slope)
+# they're significantly different
+
+### adding a quadratic term of time to the slope model
+# to account for curved relationship between time and pain rating
+model_slope_quad = lmer(pain_rating ~ time + I(time^2) + age + sex + 
+                      STAI_trait + pain_cat + weight + mindfulness + 
+                      cortisol_serum + (time|ID), data = data_ZK_long)
+
+stdCoef.merMod <- function(object) {
+  sdy <- sd(getME(object,"y"))
+  sdx <- apply(getME(object,"X"), 2, sd)
+  sc <- fixef(object)*sdx/sdy
+  se.fixef <- coef(summary(object))[,"Std. Error"]
+  se <- se.fixef*sdx/sdy
+  return(data.frame(stdcoef=sc, stdse=se))
+}
+
+summary(model_slope_quad) # unstandardised
+confint(model_slope_quad)
+stdCoef.merMod(model_slope_quad) # standardised
+
+## plot the results
+# save prediction of the model to new variable
+data_ZK_long$pred_slope_quad = predict(model_slope_quad)
+
+# random slope model
+windows()
+ggplot(data_ZK_long, aes(y = pain_rating, x = time, group = ID))+
+  geom_point(size = 3)+
+  geom_line(color='red', aes(y=pred_slope_quad, x=time))+
+  facet_wrap( ~ ID, ncol = 5)
+
+# compare models with cAIC
+cAIC(model_slope)$caic
+cAIC(model_slope_quad)$caic
+# quad model is better
+
+# compare models with anova
+anova(model_slope, model_slope_quad)
+# they're significantly different
+
+# based on the results it seems that the random slope model
+# including the quadratic term of time would be the best model to choose
+
+r2beta(model_slope_quad)
+
+###########################################################################
+
+# Check assumptions for model_slope_quad
+#
+
+# normality assumption
+# QQ plot
+qqnorm(resid(model_slope_quad))
+qqline(resid(model_slope_quad))
+
+# linearity assumption
+# linearity of prediction and standardized residuals
+plot(model_slope_quad, which = 3)
+
+# linearity assumption
+#  predicted values against residuals
+plot(resid(model_slope_quad))
+
+# homoscedasticty assumption (homogeneity of variance)
+# look for funnel shape on this graph
+leveneTest(residuals(model_slope_quad)~data_ZK_long$ID)
+# it's not significant which is good
+
+# multicollinearity
+vif.mer <- function (fit) {
+  ## adapted from rms::vif
+  
+  v <- vcov(fit)
+  nam <- names(fixef(fit))
+  
+  ## exclude intercepts
+  ns <- sum(1 * (nam == "Intercept" | nam == "(Intercept)"))
+  if (ns > 0) {
+    v <- v[-(1:ns), -(1:ns), drop = FALSE]
+    nam <- nam[-(1:ns)]
+  }
+  
+  d <- diag(v)^0.5
+  v <- diag(solve(v/(d %o% d)))
+  names(v) <- nam
+  v
+}
+vif.mer(model_slope_quad)
