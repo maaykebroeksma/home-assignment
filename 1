@@ -1,0 +1,167 @@
+# home-assignment
+R code home assignment
+
+data_ZK_1 = read.csv("https://raw.githubusercontent.com/kekecsz/PSYP13_Data_analysis_class/master/home_sample_1.csv")
+
+require(psych)
+require(lsr)
+require(r2glmm)
+require(car)
+
+summary(data_ZK_1)
+describe(data_ZK_1)
+windows()
+boxplot(formula =  pain~sex, data=data_ZK_1)  # there's a third gender called "3"
+
+data_ZK_1 <- data_ZK_1[-c(15),]               # delete participant #15 that has gender "3"
+data_ZK_1$sex<-factor(data_ZK_1$sex)          # delete level "3" of factor "sex"
+windows()
+boxplot(formula =  pain~sex, data=data_ZK_1)  # now the boxplot looks normal.
+
+summary(data_ZK_1)
+describe(data_ZK_1)
+cor(data_ZK_1$pain, data_ZK_1$age)
+
+# there are people who have a mindfulness score of lower than 1, even though the scale
+# ranges from 1 to 6 ... Delete those participants!
+
+data_ZK_1 <- data_ZK_1[!(data_ZK_1$mindfulness<=1),]
+
+# Once you have an LM and assigned it to a factor (regression=lm(blablabla)), then type:
+# lev=hat(model.matrix(regression)) and plot(lev)
+# Leverage is how much influence one observation has on the regression line.
+
+# In the end, what I need to do is: model1 <- lm(pain predicted by age and sex)
+#                                   model2 <- lm(pain predicted by age, sex, STAI, pain 
+#                                                catastrophizing, mindfulness, and cortisol 
+#                                                measures)
+#                                   anova(model1, model2)
+
+model1 <- lm(pain ~ age + sex, data=data_ZK_1)
+summary(model1)
+windows()
+plot(model1)                        # maybe use plot(model1, which = 4) or plot(model1, which = 5)
+
+lev1=hat(model.matrix(model1))
+windows()
+plot(lev1)                          # largest leverage is 0.08332641, obs 66 
+
+N1 = nrow(data_ZK_1)
+mahad1 = (N1-1)*(lev1-1/N1)
+tail(sort(mahad1),5)
+order(mahad1,decreasing=T)[c(5,4,3,2,1)]
+
+# Look up chi square table and df = number of predictors, alpha level = .001. Anything
+# higher than that value is a multivariate outlier.
+
+model2 <- lm(pain ~ age + sex + STAI_trait + pain_cat + mindfulness + 
+               cortisol_serum + cortisol_saliva, data=data_ZK_1)
+summary(model2)
+windows()
+plot(model2)
+
+lev2=hat(model.matrix(model2))
+windows()
+plot(lev2)                          # largest leverage is 0.09451812, obs 66 
+
+N2 = nrow(data_ZK_1)
+mahad2 = (N2-1)*(lev2-1/N2)
+tail(sort(mahad2),5)
+order(mahad2,decreasing=T)[c(5,4,3,2,1)]
+
+# Look up chi square table and df = number of predictors, alpha level = .001. Anything
+# higher than that value is a multivariate outlier.
+
+# there's no outliers for either model
+
+anova(model1, model2)
+AIC(model1)
+AIC(model2)
+
+# Alright so the two models are significantly different. This means that the additional predictors 
+# in model 2 account for enough variance that I can reject the null hypothesis that the models are 
+# the same. So, new information has been gained about postoperative pain by taking into account
+# psychological and hormonal variables aside from demographics. Model2 is better!
+
+# normality assumption
+# QQ plot
+
+plot(model2, which = 2)
+
+# linearity assumption
+# linearity of prediction and standardized residuals
+plot(model2, which = 3)
+
+# linearity assumption
+#  predicted values against residuals
+ plot(model2, which = 1)
+#  residual plot for each predictor from the car package, returning the result of linearity tests
+ windows()
+ residualPlots(model2)
+ # If it's insignificant, it's good
+ 
+# homoscedasticty assumption (homogeneity of variance)
+# look for funnel shape on this graph
+windows()
+ plot(model2, which=3)
+ ncvTest(model2)
+ # it's not significant which is good, it means it's homoblabla (no heteroscedbla)
+ 
+# multicollinearity
+vif(model2)
+cor(data_ZK_1$cortisol_serum, data_ZK_1$cortisol_saliva)
+# so cortisol_serum and cortisol_saliva are correlated (the vif's are above 5, so look at their correlation
+# (0.867537) and exclude one of them. I'm going to exclude saliva.) 
+
+model3 <- lm(pain ~ age + sex + STAI_trait + pain_cat + mindfulness + 
+               cortisol_serum, data=data_ZK_1)
+summary(model3)
+windows()
+plot(model3)
+
+lev3=hat(model.matrix(model3))
+windows()
+plot(lev3)                          # largest leverage is 0.09451812, obs 66 
+
+N3 = nrow(data_ZK_1)
+mahad3 = (N3-1)*(lev3-1/N3)
+tail(sort(mahad3),5)
+order(mahad3,decreasing=T)[c(5,4,3,2,1)]
+
+# Look up chi square table and df = number of predictors, alpha level = .001. Anything
+# higher than that value is a multivariate outlier.
+# There is no outlier.
+
+anova(model1, model3)
+AIC(model1)
+AIC(model2)
+AIC(model3)
+
+# normality assumption
+# QQ plot
+
+plot(model3, which = 2)
+
+# linearity assumption
+# linearity of prediction and standardized residuals
+plot(model3, which = 3)
+
+# linearity assumption
+#  predicted values against residuals
+plot(model3, which = 1)
+#  residual plot for each predictor from the car package, returning the result of linearity tests
+windows()
+residualPlots(model3)
+# If it's insignificant, it's good
+
+# homoscedasticty assumption (homogeneity of variance)
+# look for funnel shape on this graph
+windows()
+plot(model3, which=3)
+ncvTest(model3)
+# it's not significant
+
+# multicollinearity
+vif(model3)
+
+summary(model3)
